@@ -47,6 +47,7 @@ public partial class MainWindow : Window
 
     void LoadIntoUi()
     {
+        if (_s.MigrateCustomFlags()) _s.Save(); // before the Tweaks controls read _s
         Greeting.Text = GreetingFor(DateTime.Now);
         StartGreetingClock();
 
@@ -62,6 +63,7 @@ public partial class MainWindow : Window
             rb.IsChecked = (string)rb.Tag == _s.Msaa.ToString();
         RefreshVersionMode();
         FlagsBox.Text = Settings.LoadFlagsText();
+        BuildFlagRows();
         ValidateFlags();
         RefreshStatus();
         RefreshMods();
@@ -592,6 +594,7 @@ public partial class MainWindow : Window
             if (show) StaggerIn(page);
         }
         if (target == "PageMods") RefreshMods();
+        if (target == "PageFlags") RefreshFlagRows();
         if (target == "PageVersions") _ = LoadHistoryAsync();
     }
 
@@ -793,40 +796,138 @@ public partial class MainWindow : Window
             FlagsBox.Text = JsonNode.Parse(FlagsBox.Text)!.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
-    // Only flags from Roblox's DFStringAllowedPublicFlags allowlist (checked 2026-11-14).
-    static readonly (string Key, JsonNode Value)[] FpsPreset =
-    {
-        ("DFIntCSGLevelOfDetailSwitchingDistance", 0),
-        ("DFIntCSGLevelOfDetailSwitchingDistanceL12", 0),
-        ("DFIntCSGLevelOfDetailSwitchingDistanceL23", 0),
-        ("DFIntCSGLevelOfDetailSwitchingDistanceL34", 0),
-        ("FIntFRMMaxGrassDistance", 0),
-        ("FIntFRMMinGrassDistance", 0),
-    };
-    static readonly (string Key, JsonNode Value)[] PotatoExtra =
-    {
-        ("DFFlagTextureQualityOverrideEnabled", "True"),
-        ("DFIntTextureQualityOverride", 0),
-        ("DFIntDebugFRMQualityLevelOverride", 1),
-        ("FIntDebugForceMSAASamples", 1),
-        ("DFFlagDebugPauseVoxelizer", "True"),
-        ("FFlagDebugSkyGray", "True"),
-    };
+    // ---------------- fastflag rows ----------------
 
-    void ApplyPreset(IEnumerable<(string Key, JsonNode Value)> add, string toast)
+    readonly Dictionary<string, (CheckBox sw, TextBox? box)> _flagRows = new();
+    readonly Dictionary<string, TextBlock> _tweakRowState = new();
+
+    /// <summary>Builds one card per group from FlagCatalog and puts them where FlagRowsAnchor sits.</summary>
+    void BuildFlagRows()
     {
-        if (!ValidateFlags()) { ShowToast("Fix the JSON first", ok: false); return; }
-        var obj = (JsonObject)JsonNode.Parse(FlagsBox.Text)!;
-        foreach (var (k, _) in FpsPreset.Concat(PotatoExtra)) obj.Remove(k);
-        foreach (var (k, v) in add) obj[k] = v.DeepClone();
-        FlagsBox.Text = obj.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-        Settings.SaveFlagsText(FlagsBox.Text);
+        int at = FlagsPanel.Children.IndexOf(FlagRowsAnchor);
+        FlagsPanel.Children.Remove(FlagRowsAnchor);
+        foreach (var group in FlagCatalog.All.GroupBy(d => d.Group))
+        {
+            FlagsPanel.Children.Insert(at++, new TextBlock
+            {
+                Text = group.Key.ToUpperInvariant(), Style = (Style)FindResource("Eyebrow"), Margin = new Thickness(0, 16, 0, 8),
+            });
+            var list = new StackPanel();
+            bool first = true;
+            foreach (var def in group)
+            {
+                if (!first) list.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("CardBorder"), Margin = new Thickness(0, 14, 0, 14) });
+                first = false;
+                list.Children.Add(BuildFlagRow(def));
+            }
+            FlagsPanel.Children.Insert(at++, new Border { Style = (Style)FindResource("Card"), Child = list });
+        }
+        RefreshFlagRows();
+    }
+
+    FrameworkElement BuildFlagRow(FlagDef def)
+    {
+        var row = new DockPanel();
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        DockPanel.SetDock(right, Dock.Right);
+        row.Children.Add(right);
+
+        if (def.Kind == FlagKind.Tweaks)
+        {
+            var state = new TextBlock { Foreground = (Brush)FindResource("MoonGold"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+            _tweakRowState[def.Id] = state;
+            right.Children.Add(state);
+            var open = new Button { Content = "Open Tweaks", Margin = new Thickness(0) };
+            open.Click += (_, _) => { foreach (RadioButton rb in NavItems.Children) if ((string)rb.CommandParameter == "PageTweaks") rb.IsChecked = true; };
+            right.Children.Add(open);
+        }
+        else
+        {
+            TextBox? box = null;
+            if (def.Kind == FlagKind.Number)
+            {
+                box = new TextBox { Width = 76, Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center,
+                                    HorizontalContentAlignment = HorizontalAlignment.Center, ToolTip = def.Hint };
+                box.TextChanged += (_, _) => FlagValueChanged(def, box);
+                box.LostFocus += (_, _) => { bool was = _loading; _loading = true; box.Text = CurrentValue(def).ToString(); _loading = was; };
+                right.Children.Add(new TextBlock { Text = def.Hint, Foreground = (Brush)FindResource("Dim"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+                right.Children.Add(box);
+            }
+            var sw = new CheckBox { Style = (Style)FindResource("Switch"), VerticalAlignment = VerticalAlignment.Center };
+            sw.Click += (_, _) => FlagSwitchChanged(def, sw.IsChecked == true);
+            right.Children.Add(sw);
+            _flagRows[def.Id] = (sw, box);
+        }
+
+        var text = new StackPanel { Margin = new Thickness(0, 0, 20, 0) };
+        text.Children.Add(new TextBlock { Text = def.Title, Style = (Style)FindResource("H2"), FontSize = 14 });
+        text.Children.Add(new TextBlock { Text = def.Description, Style = (Style)FindResource("Note"), Margin = new Thickness(0, 4, 0, 0) });
+        text.Children.Add(new TextBlock
+        {
+            Text = string.Join("  ·  ", def.Keys), FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 11,
+            Foreground = (Brush)FindResource("Dim"), Margin = new Thickness(0, 6, 0, 0), TextWrapping = TextWrapping.Wrap,
+        });
+        row.Children.Add(text);
+        return row;
+    }
+
+    int CurrentValue(FlagDef def) => _s.FlagRows.TryGetValue(def.Id, out var v) ? v : def.Recommended;
+
+    void FlagSwitchChanged(FlagDef def, bool on)
+    {
+        if (on)
+        {
+            int value = def.Kind == FlagKind.Toggle ? 1
+                : _flagRows[def.Id].box is { } b && int.TryParse(b.Text, out var v) ? Math.Clamp(v, def.Min, def.Max) : def.Recommended;
+            _s.FlagRows[def.Id] = value;
+        }
+        else _s.FlagRows.Remove(def.Id);
+        RefreshFlagRows();
+        SaveTweaks();
+    }
+
+    void FlagValueChanged(FlagDef def, TextBox box)
+    {
+        if (_loading || !_s.FlagRows.ContainsKey(def.Id)) return;
+        if (!int.TryParse(box.Text, out var v) || v < def.Min || v > def.Max) return; // keep the last good value
+        if (_s.FlagRows[def.Id] == v) return;
+        _s.FlagRows[def.Id] = v;
+        _s.Save();
+    }
+
+    void RefreshFlagRows()
+    {
+        bool was = _loading; _loading = true;
+        foreach (var (id, (sw, box)) in _flagRows)
+        {
+            var def = FlagCatalog.Get(id)!;
+            bool on = _s.FlagRows.ContainsKey(id);
+            sw.IsChecked = on;
+            if (box != null) { box.Text = CurrentValue(def).ToString(); box.IsEnabled = on; box.Opacity = on ? 1 : 0.45; }
+        }
+        if (_tweakRowState.TryGetValue("RenderApi", out var api)) api.Text = _s.RenderApi;
+        if (_tweakRowState.TryGetValue("Msaa", out var msaa)) msaa.Text = _s.Msaa == 0 ? "Automatic" : $"{_s.Msaa}x";
+        if (_tweakRowState.TryGetValue("Fullscreen", out var fs)) fs.Text = _s.ExclusiveFullscreen ? "On" : "Off";
+        _loading = was;
+    }
+
+    void ApplyPreset(Dictionary<string, int> preset, string toast)
+    {
+        foreach (var (id, v) in preset) _s.FlagRows[id] = v;
+        RefreshFlagRows();
+        _s.Save();
         ShowToast(toast);
     }
 
-    void PresetFps_Click(object sender, RoutedEventArgs e) => ApplyPreset(FpsPreset, "FPS Boost applied");
-    void PresetPotato_Click(object sender, RoutedEventArgs e) => ApplyPreset(FpsPreset.Concat(PotatoExtra), "Max FPS applied");
-    void PresetClear_Click(object sender, RoutedEventArgs e) => ApplyPreset([], "Presets removed");
+    void PresetFps_Click(object sender, RoutedEventArgs e) => ApplyPreset(FlagCatalog.FpsBoost, "FPS Boost switched on");
+    void PresetPotato_Click(object sender, RoutedEventArgs e) => ApplyPreset(FlagCatalog.MaxFps, "Max FPS switched on");
+    void PresetClear_Click(object sender, RoutedEventArgs e)
+    {
+        _s.FlagRows.Clear();
+        RefreshFlagRows();
+        _s.Save();
+        ShowToast("All flags off");
+    }
 
     void SaveFlags_Click(object sender, RoutedEventArgs e)
     {

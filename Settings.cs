@@ -18,6 +18,9 @@ public class Settings
         if (p == Product.Studio) InstalledStudioVersion = v; else InstalledVersion = v;
     }
 
+    /// <summary>FastFlags page rows that are switched on: row id -> value (1 for plain on/off rows).</summary>
+    public Dictionary<string, int> FlagRows { get; set; } = new();
+
     public bool UseDedicatedGpu { get; set; } = true;     // run MoonStrap + Roblox on the NVIDIA card
     public int Msaa { get; set; } = 0;                 // 0 = automatic, otherwise 1/2/4/8 samples
     public string? PinnedVersion { get; set; }           // null = always use latest
@@ -54,12 +57,49 @@ public class Settings
         File.WriteAllText(Paths.FlagsFile, obj.ToJsonString(Opts));
     }
 
-    /// <summary>Custom flags merged with the presets from the Tweaks tab (presets win).</summary>
+    /// <summary>Moves flags that now have their own row on the FastFlags page out of the custom JSON
+    /// (e.g. ones added by the old preset buttons) and switches those rows on instead.</summary>
+    public bool MigrateCustomFlags()
+    {
+        JsonObject custom;
+        try { custom = JsonNode.Parse(LoadFlagsText()) as JsonObject ?? new(); }
+        catch { return false; }
+        bool changed = false;
+        foreach (var def in FlagCatalog.All.Where(d => d.Kind != FlagKind.Tweaks))
+        {
+            var valueKey = def.Keys[^1];
+            if (custom[valueKey] is not JsonNode node) continue;
+            var text = node.ToString();
+            if (def.Kind == FlagKind.Toggle)
+            {
+                // "False" is the same as the row being off
+                if (text.Equals("True", StringComparison.OrdinalIgnoreCase)) FlagRows.TryAdd(def.Id, 1);
+            }
+            else FlagRows.TryAdd(def.Id, int.TryParse(text, out var v) ? Math.Clamp(v, def.Min, def.Max) : def.Recommended);
+            foreach (var k in def.Keys) custom.Remove(k);
+            changed = true;
+        }
+        // The old Max FPS preset also put MSAA in the custom JSON; that now lives on the Tweaks tab.
+        if (custom["FIntDebugForceMSAASamples"] is JsonNode msaa)
+        {
+            if (Msaa == 0 && int.TryParse(msaa.ToString(), out var m) && m is 1 or 2 or 4 or 8) Msaa = m;
+            custom.Remove("FIntDebugForceMSAASamples");
+            changed = true;
+        }
+        if (changed) File.WriteAllText(Paths.FlagsFile, custom.ToJsonString(Opts));
+        return changed;
+    }
+
+    /// <summary>Custom flags, then the FastFlags page rows, then the Tweaks tab (later ones win).</summary>
     public JsonObject BuildFlags()
     {
         JsonObject flags;
         try { flags = JsonNode.Parse(LoadFlagsText()) as JsonObject ?? new(); }
         catch { flags = new(); }
+
+        foreach (var (id, value) in FlagRows)
+            if (FlagCatalog.Get(id) is { Kind: not FlagKind.Tweaks } def)
+                foreach (var (k, v) in def.Write(value)) flags[k] = v;
 
         if (FpsCap > 0) flags["DFIntTaskSchedulerTargetFps"] = FpsCap;
 

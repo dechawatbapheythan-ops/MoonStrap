@@ -10,7 +10,7 @@
     <Product>MoonStrap</Product>
     <AssemblyTitle>MoonStrap</AssemblyTitle>
     <Description>MoonStrap - Roblox launcher</Description>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <ApplicationIcon>Assets\moon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

@@ -322,34 +322,58 @@
                 </ScrollViewer>
 
                 <!-- FASTFLAGS -->
-                <DockPanel x:Name="PageFlags" Grid.Row="1" Visibility="Collapsed" Margin="32,4,32,24">
-                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
-                        <TextBlock Text="FastFlags" Style="{StaticResource H1}"/>
-                        <TextBlock Style="{StaticResource Note}" Margin="0,4,0,0"
-                                   Text="Raw ClientAppSettings.json. Roblox only honours flags on its allowlist. Unknown flags are ignored."/>
-                        <WrapPanel Margin="0,12,0,0">
-                            <Button Content="FPS Boost" Margin="0,0,8,0" Click="PresetFps_Click"
-                                    ToolTip="Lower mesh detail sooner and remove grass. Looks almost the same."/>
-                            <Button Content="Max FPS (potato)" Margin="0,0,8,0" Click="PresetPotato_Click"
-                                    ToolTip="FPS Boost + lowest textures, lowest graphics level, no MSAA, paused lighting voxelizer, gray sky."/>
-                            <Button Content="Remove presets" Margin="0,0,8,0" Click="PresetClear_Click"
-                                    ToolTip="Remove every preset flag, keep your own flags."/>
-                        </WrapPanel>
-                        <TextBlock Style="{StaticResource Note}" Margin="0,8,0,0" TextWrapping="Wrap"
-                                   Text="Presets only use flags on Roblox's allowlist. Ping can't be changed by flags: Roblox allows no network flags, so &quot;low ping&quot; flag lists do nothing."/>
-                    </StackPanel>
-                    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                        <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Content="Save flags" Margin="0" Click="SaveFlags_Click"/>
-                        <Button DockPanel.Dock="Right" Content="Format" Click="FormatFlags_Click"/>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse x:Name="FlagsDot" Width="8" Height="8" Margin="2,0,8,0"/>
-                            <TextBlock x:Name="FlagsStatus" Foreground="{StaticResource Muted}"/>
+                <ScrollViewer x:Name="PageFlags" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="32,4,32,24">
+                    <StackPanel x:Name="FlagsPanel">
+                        <StackPanel>
+                            <TextBlock Text="FastFlags" Style="{StaticResource H1}"/>
+                            <TextBlock Style="{StaticResource Note}" Margin="0,4,0,0"
+                                       Text="Every flag Roblox allows. All off by default; switch on what you want. Changes save instantly and apply the next time Roblox launches."/>
+                            <TextBlock Style="{StaticResource Note}" Margin="0,6,0,0" Foreground="{StaticResource Dim}"
+                                       Text="Roblox ignores flags that aren't on its allowlist, and there are no network flags on it, so no flag can lower your ping."/>
                         </StackPanel>
-                    </DockPanel>
-                    <TextBox x:Name="FlagsBox" AcceptsReturn="True" AcceptsTab="True" FontFamily="Cascadia Mono, Consolas"
-                             FontSize="13" Padding="14,12" VerticalScrollBarVisibility="Auto"
-                             HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap" TextChanged="FlagsBox_TextChanged"/>
-                </DockPanel>
+
+                        <Border Style="{StaticResource Card}" Margin="0,16,0,4">
+                            <DockPanel>
+                                <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                                    <Button Content="FPS Boost" Margin="8,0,0,0" Click="PresetFps_Click"
+                                            ToolTip="Mesh detail distances and grass to 0. Looks almost the same."/>
+                                    <Button Content="Max FPS" Margin="8,0,0,0" Click="PresetPotato_Click"
+                                            ToolTip="FPS Boost + lowest graphics level and textures, paused voxelizer, gray sky, still grass."/>
+                                    <Button Content="Turn all off" Margin="8,0,0,0" Click="PresetClear_Click"/>
+                                </WrapPanel>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <TextBlock Text="Presets" Style="{StaticResource H2}"/>
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,4,0,0" Text="Switch on a group of flags in one click."/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- flag groups are generated in code (BuildFlagRows) and inserted here -->
+                        <StackPanel x:Name="FlagRowsAnchor"/>
+
+                        <!-- custom -->
+                        <StackPanel Margin="0,20,0,10">
+                            <TextBlock Text="CUSTOM FLAGS" Style="{StaticResource Eyebrow}"/>
+                            <TextBlock Style="{StaticResource Note}" Margin="0,6,0,0"
+                                       Text="Add your own flags as JSON, e.g. { &quot;FFlagExample&quot;: &quot;True&quot; }. The switches above win if the same flag is in both."/>
+                        </StackPanel>
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <DockPanel>
+                                <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Content="Save flags" Margin="0" Click="SaveFlags_Click"/>
+                                    <Button DockPanel.Dock="Right" Content="Format" Click="FormatFlags_Click"/>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse x:Name="FlagsDot" Width="8" Height="8" Margin="2,0,8,0"/>
+                                        <TextBlock x:Name="FlagsStatus" Foreground="{StaticResource Muted}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <TextBox x:Name="FlagsBox" AcceptsReturn="True" AcceptsTab="True" FontFamily="Cascadia Mono, Consolas"
+                                         FontSize="13" Padding="14,12" Height="240" VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap" TextChanged="FlagsBox_TextChanged"/>
+                            </DockPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
 
                 <!-- VERSIONS -->
                 <ScrollViewer x:Name="PageVersions" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="32,4,32,24">
