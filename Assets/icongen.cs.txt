@@ -1,0 +1,235 @@
+#:property TargetFramework=net10.0-windows
+#:property UseWPF=true
+#:property OutputType=Exe
+#:property PublishAot=false
+#:property PublishTrimmed=false
+using System.IO;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+
+var outDir = args[0];
+var t = new Thread(() => Run(outDir));
+t.SetApartmentState(ApartmentState.STA); t.Start(); t.Join();
+
+static void Run(string outDir)
+{
+    Directory.CreateDirectory(outDir);
+    int[] sizes = { 16, 20, 24, 32, 40, 48, 64, 128, 256 };
+    var pngs = sizes.Select(s => Render(s, tile: true)).ToList();
+    File.WriteAllBytes(Path.Combine(outDir, "moon.png"), pngs[^1]);
+    File.WriteAllBytes(Path.Combine(outDir, "moon-art.png"), Render(512, tile: false));
+    File.WriteAllBytes(Path.Combine(outDir, "preview-1024.png"), Render(1024, tile: true));
+
+    File.WriteAllBytes(Path.Combine(outDir, "sheet.png"), Sheet(sizes, pngs));
+    using var fs = File.Create(Path.Combine(outDir, "moon.ico"));
+    using var w = new BinaryWriter(fs);
+    w.Write((short)0); w.Write((short)1); w.Write((short)sizes.Length);
+    int offset = 6 + 16 * sizes.Length;
+    for (int i = 0; i < sizes.Length; i++)
+    {
+        byte b = (byte)(sizes[i] >= 256 ? 0 : sizes[i]);
+        w.Write(b); w.Write(b); w.Write((byte)0); w.Write((byte)0);
+        w.Write((short)1); w.Write((short)32);
+        w.Write(pngs[i].Length); w.Write(offset); offset += pngs[i].Length;
+    }
+    foreach (var p in pngs) w.Write(p);
+}
+
+static Color C(byte a, byte r, byte g, byte b) => Color.FromArgb(a, r, g, b);
+static Color C3(uint rgb) => Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+
+static RadialGradientBrush Radial(Point center, double radius, params (double off, Color c)[] stops)
+{
+    var b = new RadialGradientBrush { MappingMode = BrushMappingMode.Absolute, Center = center, GradientOrigin = center, RadiusX = radius, RadiusY = radius };
+    foreach (var (o, c) in stops) b.GradientStops.Add(new GradientStop(c, o));
+    return b;
+}
+
+static byte[] Render(int size, bool tile)
+{
+    // detail: 0 = tiny (16-24), 1 = small (32-48), 2 = full
+    int detail = size <= 24 ? 0 : size <= 48 ? 1 : 2;
+    var dv = new DrawingVisual();
+    using (var g = dv.RenderOpen())
+    {
+        g.PushTransform(new ScaleTransform(size / 256.0, size / 256.0));
+
+        // ---- moon geometry (bigger at tiny sizes so it reads in the taskbar)
+        double mScale = detail == 0 ? 1.14 : tile ? 1.0 : 1.08;
+        Point mc = new(124, 134);
+        double mr = 78 * mScale;
+        Point ic = new(mc.X + 0.47 * mr, mc.Y - 0.40 * mr);   // cut-out circle
+        double ir = 0.86 * mr;
+        if (detail == 0) { ic = new(mc.X + 0.52 * mr, mc.Y - 0.44 * mr); ir = 0.80 * mr; } // thicker crescent
+        var disc = new EllipseGeometry(mc, mr, mr);
+        var cut = new EllipseGeometry(ic, ir, ir);
+        var crescent = new CombinedGeometry(GeometryCombineMode.Exclude, disc, cut);
+
+        // ---- tile background
+        var tileRect = new Rect(8, 8, 240, 240);
+        var tileGeo = new RectangleGeometry(tileRect, 54, 54);
+        if (tile)
+        {
+            var sky = new LinearGradientBrush { StartPoint = new(0.2, 0), EndPoint = new(0.8, 1) };
+            sky.GradientStops.Add(new GradientStop(C3(0x2B2670), 0));
+            sky.GradientStops.Add(new GradientStop(C3(0x171346), 0.55));
+            sky.GradientStops.Add(new GradientStop(C3(0x0A0A22), 1));
+            g.DrawGeometry(sky, null, tileGeo);
+
+            g.PushClip(tileGeo);
+            if (detail >= 1)
+            {
+                // nebula wisps
+                g.DrawEllipse(Radial(new(206, 214), 120, (0, C(90, 0x6A, 0x3F, 0xC8)), (1, C(0, 0x6A, 0x3F, 0xC8))), null, new(206, 214), 120, 120);
+                g.DrawEllipse(Radial(new(40, 40), 110, (0, C(70, 0x3E, 0x6F, 0xE0)), (1, C(0, 0x3E, 0x6F, 0xE0))), null, new(40, 40), 110, 110);
+            }
+            if (detail == 2)
+            {
+                // deterministic star field, kept away from the moon
+                var rng = new Random(7);
+                for (int i = 0; i < 46; i++)
+                {
+                    var p = new Point(16 + rng.NextDouble() * 224, 16 + rng.NextDouble() * 224);
+                    if ((p - mc).Length < mr + 18) continue;
+                    double r = 0.6 + rng.NextDouble() * 1.3;
+                    byte a = (byte)(60 + rng.Next(140));
+                    g.DrawEllipse(new SolidColorBrush(C(a, 0xE8, 0xE4, 0xFF)), null, p, r, r);
+                }
+            }
+            // top gloss
+            var gloss = new LinearGradientBrush { StartPoint = new(0.5, 0), EndPoint = new(0.5, 0.55) };
+            gloss.GradientStops.Add(new GradientStop(C(38, 255, 255, 255), 0));
+            gloss.GradientStops.Add(new GradientStop(C(0, 255, 255, 255), 1));
+            g.DrawRectangle(gloss, null, tileRect);
+            g.Pop();
+
+            // rim: lighter on top, fading toward bottom
+            var rim = new LinearGradientBrush { StartPoint = new(0.5, 0), EndPoint = new(0.5, 1) };
+            rim.GradientStops.Add(new GradientStop(C(150, 0xC9, 0xC0, 0xFF), 0));
+            rim.GradientStops.Add(new GradientStop(C(30, 0x9A, 0x8C, 0xFF), 1));
+            double pw = detail == 0 ? 6 : 3;
+            g.DrawRoundedRectangle(null, new Pen(rim, pw), new Rect(8 + pw / 2, 8 + pw / 2, 240 - pw, 240 - pw), 54 - pw / 2, 54 - pw / 2);
+        }
+
+        // ---- glow behind the moon
+        if (detail >= 1 || !tile)
+        {
+            double gr = mr * (tile ? 1.45 : 1.42);
+            g.DrawEllipse(Radial(mc, gr, (0, C(120, 0xC6, 0xBC, 0xFF)), (0.55, C(45, 0xA9, 0x9C, 0xFF)), (1, C(0, 0xA9, 0x9C, 0xFF))), null, mc, gr, gr);
+        }
+
+        // ---- earthshine: faint dark side of the disc
+        if (detail >= 1)
+        {
+            var dark = Radial(new(mc.X + 0.3 * mr, mc.Y - 0.3 * mr), mr * 1.2, (0, C(34, 0x8C, 0x84, 0xE8)), (1, C(12, 0x5A, 0x54, 0xB0)));
+            g.DrawGeometry(dark, null, new CombinedGeometry(GeometryCombineMode.Intersect, disc, cut));
+        }
+
+        // ---- lit crescent, shaded from the lower-left limb
+        var lit = Radial(new(mc.X - 0.55 * mr, mc.Y + 0.45 * mr), mr * 1.9,
+            (0, C3(0xFFF7E2)), (0.35, C3(0xF6E9F2)), (0.7, C3(0xD9CCFF)), (1, C3(0xA897F2)));
+        g.DrawGeometry(lit, null, crescent);
+
+        g.PushClip(crescent);
+        if (detail >= 1)
+        {
+            // terminator falloff along the inner edge
+            double tr = ir + mr * 0.22;
+            g.DrawEllipse(Radial(ic, tr, (ir / tr, C(80, 0x7A, 0x6A, 0xD0)), (1, C(0, 0x6B, 0x5C, 0xC8))), null, ic, tr, tr);
+        }
+        if (detail == 2)
+        {
+            // craters: soft dark basin + bright lower-left lip
+            void Crater(double dx, double dy, double r, byte a)
+            {
+                var p = new Point(mc.X + dx * mr, mc.Y + dy * mr); r *= mr;
+                g.DrawEllipse(Radial(p, r, (0, C(a, 0xB4, 0xA6, 0xE8)), (0.8, C((byte)(a * 0.8), 0xB8, 0xAA, 0xEA)), (1, C(0, 0xB8, 0xAA, 0xEA))), null, p, r, r * 0.92);
+                var lip = new Pen(new SolidColorBrush(C((byte)(a * 0.9), 0xFF, 0xFB, 0xF0)), r * 0.16);
+                var arc = new EllipseGeometry(new Point(p.X - r * 0.06, p.Y + r * 0.06), r * 0.86, r * 0.8);
+                g.PushClip(new RectangleGeometry(new Rect(p.X - r * 1.2, p.Y, r * 2.4, r * 1.2)));
+                g.DrawGeometry(null, lip, arc);
+                g.Pop();
+            }
+            Crater(-0.60, 0.08, 0.13, 70);
+            Crater(-0.28, 0.58, 0.10, 65);
+            Crater(-0.63, -0.36, 0.07, 60);
+            Crater(0.16, 0.74, 0.06, 55);
+            Crater(-0.82, 0.40, 0.05, 55);
+        }
+        g.Pop();
+
+        // limb highlight on the outer edge (lower-left brightest)
+        if (detail >= 1)
+        {
+            var limb = new LinearGradientBrush { StartPoint = new(0, 1), EndPoint = new(1, 0) };
+            limb.GradientStops.Add(new GradientStop(C(230, 255, 252, 240), 0));
+            limb.GradientStops.Add(new GradientStop(C(0, 255, 252, 240), 0.6));
+            g.PushClip(crescent);
+            g.DrawEllipse(null, new Pen(limb, detail == 2 ? 3.2 : 4.5), mc, mr - 1.4, mr - 1.4);
+            g.Pop();
+        }
+
+        // ---- sparkles
+        if (detail >= 1)
+        {
+            Sparkle(g, new(mc.X + 0.78 * mr, mc.Y + 0.22 * mr), 17, glow: detail == 2);
+            Sparkle(g, new(196, 66), 10, glow: detail == 2);
+            if (detail == 2) Sparkle(g, new(60, 62), 7, glow: true);
+        }
+        else
+        {
+            Sparkle(g, new(200, 62), 22, glow: false);
+        }
+        g.Pop();
+    }
+    var rtb = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
+    rtb.Render(dv);
+    var enc = new PngBitmapEncoder();
+    enc.Frames.Add(BitmapFrame.Create(rtb));
+    using var ms = new MemoryStream();
+    enc.Save(ms);
+    return ms.ToArray();
+}
+
+static void Sparkle(DrawingContext g, Point c, double r, bool glow)
+{
+    if (glow)
+        g.DrawEllipse(Radial(c, r * 1.6, (0, C(150, 0xFF, 0xF1, 0xC8)), (1, C(0, 0xFF, 0xF1, 0xC8))), null, c, r * 1.6, r * 1.6);
+    var f = new StreamGeometry();
+    using (var ctx = f.Open())
+    {
+        double k = r * 0.16;
+        ctx.BeginFigure(new Point(c.X, c.Y - r), true, true);
+        ctx.QuadraticBezierTo(new Point(c.X + k, c.Y - k), new Point(c.X + r, c.Y), true, true);
+        ctx.QuadraticBezierTo(new Point(c.X + k, c.Y + k), new Point(c.X, c.Y + r), true, true);
+        ctx.QuadraticBezierTo(new Point(c.X - k, c.Y + k), new Point(c.X - r, c.Y), true, true);
+        ctx.QuadraticBezierTo(new Point(c.X - k, c.Y - k), new Point(c.X, c.Y - r), true, true);
+    }
+    g.DrawGeometry(new SolidColorBrush(C3(0xFFF8E4)), null, f);
+    g.DrawEllipse(new SolidColorBrush(Colors.White), null, c, r * 0.14, r * 0.14);
+}
+
+static byte[] Sheet(int[] sizes, List<byte[]> pngs)
+{
+    var dv = new DrawingVisual();
+    using (var g = dv.RenderOpen())
+    {
+        g.DrawRectangle(new SolidColorBrush(C3(0x0F0F2C)), null, new Rect(0, 0, 900, 560));
+        g.DrawImage(Load(Render(512, false)), new Rect(0, 0, 512, 512));
+        double x = 530, y = 20;
+        for (int i = 0; i < sizes.Length && sizes[i] <= 48; i++)
+        {
+            var img = Load(pngs[i]);
+            var gr = new DrawingGroup(); RenderOptions.SetBitmapScalingMode(gr, BitmapScalingMode.NearestNeighbor);
+            using (var gc = gr.Open()) gc.DrawImage(img, new Rect(0, 0, sizes[i] * 3, sizes[i] * 3));
+            g.PushTransform(new TranslateTransform(x, y)); g.DrawDrawing(gr); g.Pop();
+            g.DrawImage(img, new Rect(x + sizes[i] * 3 + 12, y, sizes[i], sizes[i]));
+            y += sizes[i] * 3 + 12;
+        }
+    }
+    var rtb = new RenderTargetBitmap(900, 560, 96, 96, PixelFormats.Pbgra32); rtb.Render(dv);
+    var enc = new PngBitmapEncoder(); enc.Frames.Add(BitmapFrame.Create(rtb));
+    using var ms = new MemoryStream(); enc.Save(ms); return ms.ToArray();
+}
+static BitmapSource Load(byte[] b) { var bi = new BitmapImage(); bi.BeginInit(); bi.StreamSource = new MemoryStream(b); bi.CacheOption = BitmapCacheOption.OnLoad; bi.EndInit(); bi.Freeze(); return bi; }

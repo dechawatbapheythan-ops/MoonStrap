@@ -1,0 +1,602 @@
+<Window x:Class="MoonStrap.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MoonStrap" Width="940" Height="620" MinWidth="780" MinHeight="520"
+        WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
+        Background="{StaticResource SpaceBg}" Foreground="{StaticResource Fg}"
+        Icon="Assets/moon.ico" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="0"
+                      CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
+    <Grid x:Name="Root">
+        <!-- Starfield + ambient moonlight -->
+        <!-- static stars are rasterised once into a GPU texture; drifting just moves the texture -->
+        <Canvas x:Name="Stars" IsHitTestVisible="False">
+            <Canvas.CacheMode><BitmapCache RenderAtScale="1"/></Canvas.CacheMode>
+            <Canvas.RenderTransform><TranslateTransform x:Name="StarDrift"/></Canvas.RenderTransform>
+        </Canvas>
+        <Canvas x:Name="Twinkles" IsHitTestVisible="False"/>
+        <Canvas x:Name="Meteors" IsHitTestVisible="False" ClipToBounds="True"/>
+        <Ellipse x:Name="AmbientGlow" Width="700" Height="700" HorizontalAlignment="Right" VerticalAlignment="Top"
+                 Margin="0,-380,-260,0" IsHitTestVisible="False">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#337C6CFF" Offset="0"/>
+                    <GradientStop Color="#007C6CFF" Offset="1"/>
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <Grid x:Name="Shell" Opacity="0">
+            <Grid.RenderTransform><TranslateTransform x:Name="ShellShift"/></Grid.RenderTransform>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="232"/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ===== Sidebar ===== -->
+            <Border Background="#40060718" BorderBrush="#14FFFFFF" BorderThickness="0,0,1,0">
+                <DockPanel Margin="16,16,16,18">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,2,0,28">
+                        <Image Source="Assets/moon.png" Width="38" Height="38" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="MoonStrap" FontSize="17" FontWeight="Bold"/>
+                            <TextBlock Text="LUNAR EDITION" Style="{StaticResource Eyebrow}" FontSize="9.5" Margin="0,1,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Signed-in Roblox account -->
+                    <Border x:Name="AccountCard" DockPanel.Dock="Bottom" CornerRadius="14" Padding="10,10,12,10"
+                            BorderThickness="1" Cursor="Hand" MouseLeftButtonUp="Account_Click">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="#0CFFFFFF"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#16FFFFFF"/>
+                                        <Setter Property="BorderBrush" Value="#40A99CFF"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="&#xE8A7;" Style="{StaticResource Glyph}" FontSize="11"
+                                       Foreground="{StaticResource Dim}" Margin="6,0,0,0"/>
+                            <Grid Width="42" Height="42" Margin="0,0,11,0">
+                                <!-- moonlit gradient ring -->
+                                <Ellipse StrokeThickness="2">
+                                    <Ellipse.Stroke>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#FFE7AE" Offset="0"/>
+                                            <GradientStop Color="#9D8CFF" Offset="0.55"/>
+                                            <GradientStop Color="#5E6BFF" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Ellipse.Stroke>
+                                </Ellipse>
+                                <Ellipse Margin="3" Fill="#2A2470"/>
+                                <TextBlock x:Name="AvatarFallback" Text="&#xE77B;" Style="{StaticResource Glyph}" FontSize="16"
+                                           HorizontalAlignment="Center" Foreground="{StaticResource Muted}"/>
+                                <Ellipse x:Name="AvatarCircle" Margin="3" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform><ScaleTransform x:Name="AvatarScale"/></Ellipse.RenderTransform>
+                                </Ellipse>
+                            </Grid>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="AccountDisplay" Text="Not signed in" FontSize="13" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock x:Name="AccountUser" Text="Launch Roblox to sign in" FontSize="11.5"
+                                           Foreground="{StaticResource Dim}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Grid x:Name="NavHost">
+                    <!-- shared selection indicator: slides to the checked item -->
+                    <Grid x:Name="NavIndicator" VerticalAlignment="Top" Height="40" IsHitTestVisible="False">
+                        <Grid.RenderTransform><TranslateTransform x:Name="NavIndicatorY"/></Grid.RenderTransform>
+                        <Border CornerRadius="10">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#3AA99CFF" Offset="0"/>
+                                    <GradientStop Color="#10A99CFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <Border Width="3" Height="18" CornerRadius="2" HorizontalAlignment="Left" Background="{StaticResource Accent}">
+                            <Border.Effect><DropShadowEffect Color="#A99CFF" BlurRadius="10" ShadowDepth="0" Opacity="0.9"/></Border.Effect>
+                        </Border>
+                    </Grid>
+                    <StackPanel x:Name="NavItems">
+                        <RadioButton Style="{StaticResource Nav}" Content="Home" Tag="&#xE80F;" IsChecked="True"
+                                     Checked="Nav_Checked" CommandParameter="PageHome"/>
+                        <RadioButton Style="{StaticResource Nav}" Content="Tweaks" Tag="&#xE9E9;"
+                                     Checked="Nav_Checked" CommandParameter="PageTweaks"/>
+                        <RadioButton Style="{StaticResource Nav}" Content="FastFlags" Tag="&#xE7C1;"
+                                     Checked="Nav_Checked" CommandParameter="PageFlags"/>
+                        <RadioButton Style="{StaticResource Nav}" Content="Mods" Tag="&#xEA86;"
+                                     Checked="Nav_Checked" CommandParameter="PageMods"/>
+                        <RadioButton Style="{StaticResource Nav}" Content="Versions" Tag="&#xE81C;"
+                                     Checked="Nav_Checked" CommandParameter="PageVersions"/>
+                        <RadioButton x:Name="NavAccounts" Style="{StaticResource Nav}" Content="Accounts" Tag="&#xE716;"
+                                     Checked="Nav_Checked" CommandParameter="PageAccounts"/>
+                    </StackPanel>
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <!-- ===== Content ===== -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="44"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource TitleButton}" Content="&#xE921;" Click="Min_Click"/>
+                    <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="Close_Click"/>
+                </StackPanel>
+
+                <!-- HOME -->
+                <ScrollViewer x:Name="PageHome" Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="32,4,32,24">
+                    <StackPanel>
+                        <Border CornerRadius="18" Background="{StaticResource HeroGrad}" BorderBrush="#2EA99CFF"
+                                BorderThickness="1" Margin="0,0,0,14" ClipToBounds="True" MinHeight="236">
+                            <Grid>
+                                <Ellipse x:Name="HeroGlow" Width="320" Height="320" HorizontalAlignment="Right" Margin="0,-40,-40,-40">
+                                    <Ellipse.Fill>
+                                        <RadialGradientBrush>
+                                            <GradientStop Color="#55B9AEFF" Offset="0"/>
+                                            <GradientStop Color="#00B9AEFF" Offset="1"/>
+                                        </RadialGradientBrush>
+                                    </Ellipse.Fill>
+                                </Ellipse>
+                                <Image x:Name="HeroMoon" Source="Assets/moon-art.png" Width="240" HorizontalAlignment="Right"
+                                       VerticalAlignment="Center" Margin="0,0,10,0" Opacity="1"
+                                       RenderOptions.BitmapScalingMode="HighQuality" RenderTransformOrigin="0.5,0.5">
+                                    <Image.RenderTransform><TranslateTransform x:Name="MoonFloat"/></Image.RenderTransform>
+                                </Image>
+                                <StackPanel Margin="34,32,240,30" VerticalAlignment="Center">
+                                    <TextBlock x:Name="Greeting" Style="{StaticResource Eyebrow}"/>
+                                    <TextBlock Text="Ready for moonrise" Style="{StaticResource H1}" FontSize="30" Margin="0,8,0,8"/>
+                                    <TextBlock x:Name="HeroSub" Style="{StaticResource Note}" Foreground="#C3BFEA" Margin="0,0,0,22"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="LaunchBtn" Style="{StaticResource Primary}" Padding="22,12" FontSize="14" Click="Launch_Click">
+                                            <Button.Effect>
+                                                <DropShadowEffect x:Name="LaunchGlow" Color="#7B6CFF" BlurRadius="26" ShadowDepth="0" Opacity="0.55"/>
+                                            </Button.Effect>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE768;" Style="{StaticResource Glyph}" FontSize="13" Margin="0,0,10,0"/>
+                                                <TextBlock x:Name="LaunchText" Text="Launch Roblox"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="StudioBtn" Padding="18,12" FontSize="14" Margin="4,0,0,0" Click="LaunchStudio_Click"
+                                                Background="#1FFFFFFF" BorderBrush="#40A99CFF">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE943;" Style="{StaticResource Glyph}" FontSize="13" Margin="0,0,10,0"
+                                                           Foreground="{StaticResource MoonGold}"/>
+                                                <TextBlock x:Name="StudioText" Text="Launch Studio"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <UniformGrid Columns="2">
+                            <Border Style="{StaticResource Card}" Margin="0,0,7,12">
+                                <DockPanel>
+                                    <Border Style="{StaticResource IconBadge}">
+                                        <TextBlock Text="&#xE71B;" Style="{StaticResource Glyph}" HorizontalAlignment="Center"
+                                                   FontSize="15" Foreground="{StaticResource Accent}"/>
+                                    </Border>
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Default launcher" Style="{StaticResource H2}"/>
+                                            <Border x:Name="ProtoPill" CornerRadius="8" Padding="8,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock x:Name="ProtoPillText" FontSize="11" FontWeight="SemiBold"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock x:Name="ProtocolText" Style="{StaticResource Note}" Margin="0,6,0,14"/>
+                                        <Button x:Name="RegisterBtn" HorizontalAlignment="Left" Click="Register_Click"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Style="{StaticResource Card}" Margin="7,0,0,12">
+                                <DockPanel>
+                                    <Border Style="{StaticResource IconBadge}">
+                                        <TextBlock Text="&#xE896;" Style="{StaticResource Glyph}" HorizontalAlignment="Center"
+                                                   FontSize="15" Foreground="{StaticResource Accent}"/>
+                                    </Border>
+                                    <StackPanel>
+                                        <TextBlock Text="Installed builds" Style="{StaticResource H2}"/>
+                                        <TextBlock x:Name="VersionText" Style="{StaticResource Note}" Margin="0,6,0,4"/>
+                                        <TextBlock x:Name="StudioVersionText" Style="{StaticResource Note}" Margin="0,0,0,14"/>
+                                        <WrapPanel>
+                                            <Button Content="Reinstall" Click="Reinstall_Click" Margin="0,0,8,6"
+                                                    ToolTip="Delete Roblox and Studio; they re-download on next launch"/>
+                                            <Button Content="Open folder" Click="OpenInstall_Click" Margin="0,0,8,6"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </UniformGrid>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- TWEAKS -->
+                <ScrollViewer x:Name="PageTweaks" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="32,4,32,24">
+                    <StackPanel>
+                        <TextBlock Text="Tweaks" Style="{StaticResource H1}"/>
+                        <TextBlock Style="{StaticResource Note}" Margin="0,4,0,20"
+                                   Text="Changes save instantly and apply the next time Roblox launches."/>
+
+                        <Border Style="{StaticResource Card}">
+                            <DockPanel>
+                                <CheckBox x:Name="GpuBox" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Gpu_Click"/>
+                                <Border Style="{StaticResource IconBadge}" Background="#2276B900">
+                                    <TextBlock Text="&#xE7F4;" Style="{StaticResource Glyph}" HorizontalAlignment="Center"
+                                               FontSize="15" Foreground="#9BE15D"/>
+                                </Border>
+                                <StackPanel Margin="0,0,20,0">
+                                    <TextBlock x:Name="GpuTitle" Text="Use dedicated GPU" Style="{StaticResource H2}"/>
+                                    <TextBlock x:Name="GpuNote" Style="{StaticResource Note}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Frame rate cap" Style="{StaticResource H2}"/>
+                                <TextBlock Style="{StaticResource Note}" Margin="0,4,0,14"
+                                           Text="Heads up: Roblox no longer allows the FPS-unlock flag, so this may be ignored. Use Roblox Settings, Maximum Frame Rate (up to 240) in game instead."/>
+                                <WrapPanel x:Name="FpsChips">
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="fps" Content="Default" Tag="0" Checked="FpsChip_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="fps" Content="60" Tag="60" Checked="FpsChip_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="fps" Content="120" Tag="120" Checked="FpsChip_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="fps" Content="144" Tag="144" Checked="FpsChip_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="fps" Content="240" Tag="240" Checked="FpsChip_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="fps" Content="Unlimited" Tag="9999" Checked="FpsChip_Checked"/>
+                                    <StackPanel Orientation="Horizontal" Margin="8,0,0,6">
+                                        <TextBlock Text="Custom" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBox x:Name="FpsBox" Width="80" Padding="8,4" TextChanged="FpsBox_TextChanged"/>
+                                    </StackPanel>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Rendering API" Style="{StaticResource H2}"/>
+                                <TextBlock Style="{StaticResource Note}" Margin="0,4,0,14"
+                                           Text="Force a graphics backend. Try Vulkan or D3D11 if you see stutters or crashes."/>
+                                <WrapPanel x:Name="RenderChips">
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="api" Content="Automatic" Checked="Render_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="api" Content="Direct3D 11" Checked="Render_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="api" Content="Vulkan" Checked="Render_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="api" Content="OpenGL" Checked="Render_Checked"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Anti-aliasing (MSAA)" Style="{StaticResource H2}"/>
+                                <TextBlock Style="{StaticResource Note}" Margin="0,4,0,14"
+                                           Text="Smooths jagged edges. 1x turns it off for a sharper image and more FPS; 8x is smoothest but heaviest."/>
+                                <WrapPanel x:Name="MsaaChips">
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="msaa" Content="Automatic" Tag="0" Checked="Msaa_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="msaa" Content="1x (off)" Tag="1" Checked="Msaa_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="msaa" Content="2x" Tag="2" Checked="Msaa_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="msaa" Content="4x" Tag="4" Checked="Msaa_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="msaa" Content="8x" Tag="8" Checked="Msaa_Checked"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <DockPanel>
+                                <CheckBox x:Name="FullscreenBox" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Toggle_Click"/>
+                                <StackPanel Margin="0,0,20,0">
+                                    <TextBlock Text="Exclusive fullscreen" Style="{StaticResource H2}"/>
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,4,0,0"
+                                               Text="Alt+Enter switches to true fullscreen for lower input latency."/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <DockPanel>
+                                <CheckBox x:Name="MultiInstanceBox" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Toggle_Click"/>
+                                <StackPanel Margin="0,0,20,0">
+                                    <TextBlock Text="Multiple Roblox windows" Style="{StaticResource H2}"/>
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,4,0,0"
+                                               Text="Run several clients at once. MoonStrap stays in the background while they're open."/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- FASTFLAGS -->
+                <DockPanel x:Name="PageFlags" Grid.Row="1" Visibility="Collapsed" Margin="32,4,32,24">
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                        <TextBlock Text="FastFlags" Style="{StaticResource H1}"/>
+                        <TextBlock Style="{StaticResource Note}" Margin="0,4,0,0"
+                                   Text="Raw ClientAppSettings.json. Roblox only honours flags on its allowlist. Unknown flags are ignored."/>
+                        <WrapPanel Margin="0,12,0,0">
+                            <Button Content="FPS Boost" Margin="0,0,8,0" Click="PresetFps_Click"
+                                    ToolTip="Lower mesh detail sooner and remove grass. Looks almost the same."/>
+                            <Button Content="Max FPS (potato)" Margin="0,0,8,0" Click="PresetPotato_Click"
+                                    ToolTip="FPS Boost + lowest textures, lowest graphics level, no MSAA, paused lighting voxelizer, gray sky."/>
+                            <Button Content="Remove presets" Margin="0,0,8,0" Click="PresetClear_Click"
+                                    ToolTip="Remove every preset flag, keep your own flags."/>
+                        </WrapPanel>
+                        <TextBlock Style="{StaticResource Note}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                   Text="Presets only use flags on Roblox's allowlist. Ping can't be changed by flags: Roblox allows no network flags, so &quot;low ping&quot; flag lists do nothing."/>
+                    </StackPanel>
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Content="Save flags" Margin="0" Click="SaveFlags_Click"/>
+                        <Button DockPanel.Dock="Right" Content="Format" Click="FormatFlags_Click"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse x:Name="FlagsDot" Width="8" Height="8" Margin="2,0,8,0"/>
+                            <TextBlock x:Name="FlagsStatus" Foreground="{StaticResource Muted}"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBox x:Name="FlagsBox" AcceptsReturn="True" AcceptsTab="True" FontFamily="Cascadia Mono, Consolas"
+                             FontSize="13" Padding="14,12" VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap" TextChanged="FlagsBox_TextChanged"/>
+                </DockPanel>
+
+                <!-- VERSIONS -->
+                <ScrollViewer x:Name="PageVersions" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="32,4,32,24">
+                  <StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Versions" Style="{StaticResource H1}"/>
+                        <TextBlock Style="{StaticResource Note}" Margin="0,4,0,16"
+                                   Text="Stay on the latest Roblox, or travel back to an older build."/>
+
+                        <!-- current mode -->
+                        <Border Style="{StaticResource Card}">
+                            <DockPanel>
+                                <Button x:Name="BackToLatestBtn" DockPanel.Dock="Right" Style="{StaticResource Primary}"
+                                        Content="Back to latest" VerticalAlignment="Center" Margin="0" Click="BackToLatest_Click"/>
+                                <Border Style="{StaticResource IconBadge}">
+                                    <TextBlock x:Name="ModeIcon" Style="{StaticResource Glyph}" HorizontalAlignment="Center"
+                                               FontSize="15" Foreground="{StaticResource Accent}"/>
+                                </Border>
+                                <StackPanel Margin="0,0,16,0">
+                                    <TextBlock x:Name="ModeTitle" Style="{StaticResource H2}"/>
+                                    <TextBlock x:Name="ModeNote" Style="{StaticResource Note}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- warning -->
+                        <Border CornerRadius="12" Padding="16,12" Margin="0,0,0,12" Background="#1AFFE7AE"
+                                BorderBrush="#40FFE7AE" BorderThickness="1">
+                            <DockPanel>
+                                <TextBlock Text="&#xE7BA;" Style="{StaticResource Glyph}" Foreground="{StaticResource MoonGold}"
+                                           VerticalAlignment="Top" Margin="0,2,12,0"/>
+                                <TextBlock Style="{StaticResource Note}" Foreground="#E8DDBF"
+                                           Text="Older builds usually can't join live games. Roblox's servers reject out-of-date clients and ask you to update. Use them for testing, then switch back to latest to play."/>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- manual -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Use a specific version ID" Style="{StaticResource H2}"/>
+                                <TextBlock Style="{StaticResource Note}" Margin="0,4,0,12"
+                                           Text="Roblox hides the IDs of recent builds, so newer ones aren't in the list below. Paste any ID you have, e.g. from an old Roblox or Bloxstrap Versions folder."/>
+                                <DockPanel>
+                                    <Button x:Name="PinManualBtn" DockPanel.Dock="Right" Content="Use this version" Margin="10,0,0,0" Click="PinManual_Click"/>
+                                    <TextBox x:Name="ManualVersionBox" FontFamily="Cascadia Mono, Consolas" Text="version-"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <DockPanel Margin="0,8,0,10">
+                            <TextBox x:Name="HistorySearch" DockPanel.Dock="Right" Width="200" TextChanged="HistorySearch_TextChanged"
+                                     ToolTip="Filter by version number or date"/>
+                            <TextBlock x:Name="HistoryHeader" Text="Past builds" Style="{StaticResource H2}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                    </StackPanel>
+
+                    <Border Background="{StaticResource CardBg}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1"
+                            CornerRadius="14" Height="340">
+                        <Grid>
+                            <TextBlock x:Name="HistoryStatus" Style="{StaticResource Note}" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" Text="Loading version history..."/>
+                            <ListBox x:Name="HistoryList" Background="Transparent" BorderThickness="0" Padding="6"
+                                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <Border x:Name="b" CornerRadius="10" Padding="14,8" Background="Transparent">
+                                                        <ContentPresenter/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="b" Property="Background" Value="#0FFFFFFF"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Content="Use" Padding="14,4" Margin="0"
+                                                    Tag="{Binding}" Click="PinHistory_Click"/>
+                                            <TextBlock Text="{Binding Version}" Width="140" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource Fg}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding DateText}" Width="110" Foreground="{StaticResource Muted}"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Hash}" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                                                       Foreground="{StaticResource Dim}" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+                  </StackPanel>
+                </ScrollViewer>
+
+                <!-- ACCOUNTS -->
+                <ScrollViewer x:Name="PageAccounts" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="32,4,32,24">
+                    <StackPanel>
+                        <TextBlock Text="Accounts" Style="{StaticResource H1}"/>
+                        <TextBlock Style="{StaticResource Note}" Margin="0,4,0,20"
+                                   Text="Every Roblox account that has signed in on this PC, and a log of when you switched between them."/>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock x:Name="KnownHeader" Text="On this PC" Style="{StaticResource H2}" Margin="0,0,0,12"/>
+                                <ItemsControl x:Name="KnownList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border CornerRadius="12" Padding="10,8" Margin="0,0,0,4" Background="{Binding RowBackground}">
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Content="Profile" Padding="12,4" Margin="0"
+                                                            VerticalAlignment="Center" Tag="{Binding ProfileUrl}" Click="OpenProfile_Click"/>
+                                                    <Border DockPanel.Dock="Right" Visibility="{Binding ActiveVisibility}" CornerRadius="8"
+                                                            Padding="8,1" Margin="0,0,10,0" Background="#267EE2B8" VerticalAlignment="Center">
+                                                        <TextBlock Text="Active" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource Good}"/>
+                                                    </Border>
+                                                    <Grid Width="40" Height="40" Margin="0,0,12,0">
+                                                        <Ellipse Fill="#2A2470"/>
+                                                        <TextBlock Text="&#xE77B;" FontFamily="{StaticResource Icons}" FontSize="15"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}"/>
+                                                        <Ellipse Fill="{Binding AvatarBrush}"/>
+                                                    </Grid>
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock TextTrimming="CharacterEllipsis">
+                                                            <Run Text="{Binding DisplayName, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource Fg}"/>
+                                                            <Run Text="{Binding Username, Mode=OneWay}" Foreground="{StaticResource Dim}"/>
+                                                        </TextBlock>
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,2,0,0"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="KnownEmpty" Style="{StaticResource Note}" Visibility="Collapsed"
+                                           Text="No accounts found. Sign in inside Roblox and they'll appear here."/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,10">
+                                    <Button DockPanel.Dock="Right" Content="Clear log" Padding="12,4" Margin="0" Click="ClearAccountLog_Click"/>
+                                    <TextBlock Text="Activity" Style="{StaticResource H2}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <ItemsControl x:Name="ActivityList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26"/>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Rectangle Width="2" Fill="#26A99CFF" HorizontalAlignment="Center"/>
+                                                <Ellipse Width="11" Height="11" Fill="{Binding DotBrush}" Stroke="#141236" StrokeThickness="2"
+                                                         VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,7">
+                                                    <Grid Width="26" Height="26" Margin="0,0,10,0">
+                                                        <Ellipse Fill="#2A2470"/>
+                                                        <Ellipse Fill="{Binding AvatarBrush}"/>
+                                                    </Grid>
+                                                    <TextBlock VerticalAlignment="Center">
+                                                        <Run Text="{Binding Verb, Mode=OneWay}" Foreground="{StaticResource Muted}"/>
+                                                        <Run Text="{Binding DisplayName, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource Fg}"/>
+                                                        <Run Text="{Binding Username, Mode=OneWay}" Foreground="{StaticResource Dim}"/>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" Text="{Binding TimeText}" Foreground="{StaticResource Dim}"
+                                                           FontSize="12" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="ActivityEmpty" Style="{StaticResource Note}" Visibility="Collapsed"
+                                           Text="Nothing logged yet."/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- MODS -->
+                <ScrollViewer x:Name="PageMods" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="32,4,32,24">
+                    <StackPanel>
+                        <TextBlock Text="Mods" Style="{StaticResource H1}"/>
+                        <TextBlock Style="{StaticResource Note}" Margin="0,4,0,20"
+                                   Text="Replace Roblox's sounds, textures and fonts with your own files."/>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="How it works" Style="{StaticResource H2}"/>
+                                <TextBlock Style="{StaticResource Note}" Margin="0,6,0,16">
+                                    Drop files into the Modifications folder using the same layout as the Roblox install.
+                                    For example, a custom death sound goes at
+                                    <Run Text="content\sounds\oof.ogg" FontFamily="Cascadia Mono, Consolas" Foreground="{StaticResource MoonGold}"/>.
+                                    They're applied every launch, and deleting a file restores the original.
+                                </TextBlock>
+                                <WrapPanel>
+                                    <Button Style="{StaticResource Primary}" Click="OpenMods_Click">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE838;" Style="{StaticResource Glyph}" Margin="0,0,8,0"/>
+                                            <TextBlock Text="Open Modifications folder"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Content="Refresh" Click="RefreshMods_Click"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock x:Name="ModsHeader" Style="{StaticResource H2}" Margin="0,0,0,10"/>
+                                <ItemsControl x:Name="ModsList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4">
+                                                <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource Icons}" Foreground="{StaticResource Accent}"
+                                                           VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                <TextBlock Text="{Binding}" FontFamily="Cascadia Mono, Consolas" Foreground="{StaticResource Fg}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="ModsEmpty" Style="{StaticResource Note}" Text="No mods yet. The sky is clear."/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+
+        <!-- Toast -->
+        <Border x:Name="Toast" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,28,24"
+                CornerRadius="10" Padding="16,10" Background="#F0221E52" BorderBrush="#55A99CFF" BorderThickness="1"
+                Opacity="0" IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="ToastIcon" Text="&#xE73E;" Style="{StaticResource Glyph}" Foreground="{StaticResource Good}" Margin="0,0,10,0"/>
+                <TextBlock x:Name="ToastText"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
+
