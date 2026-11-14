@@ -236,6 +236,21 @@
 
                         <Border Style="{StaticResource Card}">
                             <DockPanel>
+                                <CheckBox x:Name="AlwaysLinksBox" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="AlwaysLinks_Click"/>
+                                <Border Style="{StaticResource IconBadge}">
+                                    <TextBlock Text="&#xE71B;" Style="{StaticResource Glyph}" HorizontalAlignment="Center"
+                                               FontSize="15" Foreground="{StaticResource Accent}"/>
+                                </Border>
+                                <StackPanel Margin="0,0,20,0">
+                                    <TextBlock Text="Always use MoonStrap" Style="{StaticResource H2}"/>
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,4,0,0"
+                                               Text="Play and Edit buttons on roblox.com (and Roblox links anywhere) always open MoonStrap. If Roblox's installer, Bloxstrap or another launcher takes them over, MoonStrap takes them straight back."/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <DockPanel>
                                 <CheckBox x:Name="GpuBox" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Gpu_Click"/>
                                 <Border Style="{StaticResource IconBadge}" Background="#2276B900">
                                     <TextBlock Text="&#xE7F4;" Style="{StaticResource Glyph}" HorizontalAlignment="Center"

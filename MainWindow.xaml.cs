@@ -96,7 +96,9 @@ public partial class MainWindow : Window
     {
         bool reg = Protocol.IsRegistered && Protocol.IsStudioRegistered;
         ProtocolText.Text = reg
-            ? "Play and Edit buttons on roblox.com open through MoonStrap."
+            ? LinkGuard.Enabled
+                ? "Play and Edit buttons on roblox.com open through MoonStrap. If Roblox's installer or another launcher takes them over, MoonStrap takes them straight back."
+                : "Play and Edit buttons on roblox.com open through MoonStrap."
             : Protocol.IsRegistered
                 ? "Play buttons use MoonStrap, but Edit (Studio) buttons don't yet. Click below to take over both."
                 : "Play and Edit buttons on roblox.com use " + OtherLauncherName() + ". Take over to apply your tweaks.";
@@ -105,6 +107,20 @@ public partial class MainWindow : Window
         ProtoPill.Background = new SolidColorBrush(reg ? Color.FromArgb(0x26, 0x7E, 0xE2, 0xB8) : Color.FromArgb(0x26, 0xFF, 0x8F, 0xA3));
         ProtoPillText.Foreground = (Brush)FindResource(reg ? "Good" : "Bad");
         ProtoPillText.Text = reg ? "Active" : "Inactive";
+        AlwaysLinksBox.IsChecked = LinkGuard.Enabled;
+    }
+
+    void AlwaysLinks_Click(object sender, RoutedEventArgs e)
+    {
+        bool on = AlwaysLinksBox.IsChecked == true;
+        try
+        {
+            if (on) Protocol.Register(_s); // takes the links now and starts the guard
+            else LinkGuard.Enabled = false; // links stay with MoonStrap until something else takes them
+            ShowToast(on ? "Roblox links will always open MoonStrap" : "MoonStrap won't take links back anymore");
+        }
+        catch (Exception ex) { ShowToast("Couldn't change it: " + ex.Message, ok: false); }
+        RefreshStatus();
     }
 
     static string OtherLauncherName()

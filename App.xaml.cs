@@ -8,8 +8,16 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Paths.Ensure();
+        if (e.Args.FirstOrDefault() == LinkGuard.Arg)
+        {
+            // background link guard: no window, no Start Menu/GPU work
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            new Thread(() => { LinkGuard.Run(); Dispatcher.Invoke(Shutdown); }) { IsBackground = true }.Start();
+            return;
+        }
         StartMenu.Ensure();
         GpuPreference.ApplyToSelf(Settings.Load());
+        try { LinkGuard.EnsureRunning(); } catch { }
         var arg = e.Args.FirstOrDefault();
 
         // one-off version for this launch only: MoonStrap.exe -player -version <latest | version-hash | 0.710[.0.7100702]>
