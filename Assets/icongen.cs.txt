@@ -22,6 +22,9 @@ static void Run(string outDir)
     File.WriteAllBytes(Path.Combine(outDir, "preview-1024.png"), Render(1024, tile: true));
 
     File.WriteAllBytes(Path.Combine(outDir, "sheet.png"), Sheet(sizes, pngs));
+
+    // Standard ICO layout: classic 32-bit BMP entries for < 256 px, PNG only for 256 px.
+    var entries = sizes.Select((s, i) => s >= 256 ? pngs[i] : BmpEntry(pngs[i], s)).ToList();
     using var fs = File.Create(Path.Combine(outDir, "moon.ico"));
     using var w = new BinaryWriter(fs);
     w.Write((short)0); w.Write((short)1); w.Write((short)sizes.Length);
@@ -31,9 +34,32 @@ static void Run(string outDir)
         byte b = (byte)(sizes[i] >= 256 ? 0 : sizes[i]);
         w.Write(b); w.Write(b); w.Write((byte)0); w.Write((byte)0);
         w.Write((short)1); w.Write((short)32);
-        w.Write(pngs[i].Length); w.Write(offset); offset += pngs[i].Length;
+        w.Write(entries[i].Length); w.Write(offset); offset += entries[i].Length;
     }
-    foreach (var p in pngs) w.Write(p);
+    foreach (var e in entries) w.Write(e);
+}
+
+static byte[] BmpEntry(byte[] png, int size)
+{
+    var dec = new PngBitmapDecoder(new MemoryStream(png), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+    var src = new FormatConvertedBitmap(dec.Frames[0], PixelFormats.Bgra32, null, 0); // straight (non-premultiplied) alpha
+    int stride = size * 4;
+    var px = new byte[stride * size];
+    src.CopyPixels(px, stride, 0);
+
+    int maskStride = ((size + 31) / 32) * 4;
+    using var ms = new MemoryStream();
+    using var w = new BinaryWriter(ms);
+    w.Write(40); w.Write(size); w.Write(size * 2);          // BITMAPINFOHEADER, height = XOR + AND
+    w.Write((short)1); w.Write((short)32); w.Write(0);
+    w.Write(stride * size + maskStride * size); w.Write(0); w.Write(0); w.Write(0); w.Write(0);
+    for (int y = size - 1; y >= 0; y--) w.Write(px, y * stride, stride);  // bottom-up
+    var mask = new byte[maskStride * size];                  // AND mask: 1 = transparent
+    for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+            if (px[(y * size + x) * 4 + 3] == 0) mask[(size - 1 - y) * maskStride + x / 8] |= (byte)(0x80 >> (x % 8));
+    w.Write(mask);
+    return ms.ToArray();
 }
 
 static Color C(byte a, byte r, byte g, byte b) => Color.FromArgb(a, r, g, b);
